@@ -1,4 +1,4 @@
- package scanner
+package scanner
 
 import (
 	"context"
@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yourusername/hx-hawks/pkg/config"     // Adjust import path
-	"github.com/yourusername/hx-hawks/pkg/httpclient" // Adjust import path
-	"github.com/yourusername/hx-hawks/pkg/output"     // Adjust import path
-	"github.com/yourusername/hx-hawks/pkg/types"      // Adjust import path
+	"github.com/nxneeraj/hx-hawks/pkg/config"     
+	"github.com/nxneeraj/hx-hawks/pkg/httpclient" 
+	"github.com/nxneeraj/hx-hawks/pkg/output"     
+	"github.com/nxneeraj/hx-hawks/pkg/types"      
 )
 
 // Scanner orchestrates the scanning process.
