@@ -22,7 +22,7 @@
   - 🟥 Red: Vulnerable URLs  
   - ⚪ White: Safe responses  
   - 🔵 Blue: Vulnerable responses  
-  - 💖 Pink: Matched keywords
+  - 💗 Pink: Matched keywords
 - 🧠 Smart filters, retries, timeouts, custom headers
 - 🌐 **Built-in API server** (SSE + RESTful) for real-time results
 - 🛠️ Ready for integration into future tools like **Fruttry**, **Hx-Bunny**, or custom dashboards
@@ -30,6 +30,14 @@
 ---
 
 ## 📦 Installation
+
+## Go-Lang Installer (Self-Install)
+
+```bash
+go install github.com/hxbunny/hx-hawks@latest
+```
+
+### Manual
 
 ```bash
 git clone https://github.com/nxneeraj/hx-hawks.git
