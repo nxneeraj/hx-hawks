@@ -32,7 +32,7 @@
 ## 📦 Installation
 
 ```bash
-git clone https://github.com/nxneeraaj/hx-hawks.git
+git clone https://github.com/nxneeraj/hx-hawks.git
 cd hx-hawks
 go build -o hx-hawks main.go
 ```
