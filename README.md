@@ -34,7 +34,7 @@
 ```bash
 git clone https://github.com/nxneeraaj/hx-hawks.git
 cd hx-hawks
-go build -o hx-hawks
+go build -o hx-hawks main.go
 ```
 
 Now you're ready to fly 🦅
