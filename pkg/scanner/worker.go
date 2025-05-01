@@ -7,14 +7,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nxneeraj/hx-hawks/pkg/httpclient" 
-	"github.com/nxneeraj/hx-hawks/pkg/types"      
-	"github.com/nxneeraj/hx-hawks/pkg/utils"      
+	
+	"github.com/nxneeraj/hx-hawks/pkg/httpclient"
+	"github.com/nxneeraj/hx-hawks/pkg/types"
+	"github.com/nxneeraj/hx-hawks/pkg/utils"
 )
 
 // Worker function that processes URLs from the urls channel and sends results to the results channel.
-func Worker(ctx context.Context, wg *sync.WaitGroup, id int, client *httpclient.CustomClient, keywords []string, delay time.Duration, urls <-chan string, results chan<- types.ScanResult, verbose bool) {
-	defer wg.Done()
+// Note: Removed wg *sync.WaitGroup from parameters as it's handled in the calling function (scanner.Run)
+// to avoid potential race conditions if not used carefully. The caller waits for completion.
+func Worker(ctx context.Context, id int, client *httpclient.CustomClient, keywords []string, delay time.Duration, urls <-chan string, results chan<- types.ScanResult, verbose bool) {
+	// Removed wg.Done() as wg is not passed anymore
+
 	if verbose {
 		log.Printf("[Worker %d] Started", id)
 	}
@@ -66,7 +70,17 @@ func Worker(ctx context.Context, wg *sync.WaitGroup, id int, client *httpclient.
 				for _, keyword := range keywords {
 					// Simple case-sensitive check. Use strings.ContainsFold for case-insensitive.
 					if strings.Contains(bodyString, keyword) {
-						matched = append(matched, keyword)
+						// Avoid adding duplicates if keyword appears multiple times
+						found := false
+						for _, m := range matched {
+							if m == keyword {
+								found = true
+								break
+							}
+						}
+						if !found {
+							matched = append(matched, keyword)
+						}
 						isVulnerable = true
 					}
 				}
@@ -79,7 +93,16 @@ func Worker(ctx context.Context, wg *sync.WaitGroup, id int, client *httpclient.
 			}
 
 			// Send result back to the main goroutine
-			results <- result
+			// Use a select to prevent blocking indefinitely if the receiver stops listening
+			select{
+			case results <- result:
+			case <-ctx.Done():
+				if verbose {
+					log.Printf("[Worker %d] Context cancelled while sending result for %s", id, urlStr)
+				}
+				return // Exit if context cancelled
+			}
+
 
 			// Apply delay if configured
 			if delay > 0 {
