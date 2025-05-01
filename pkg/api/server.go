@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
 	// Use gorilla/mux or net/http's default mux
 	// "github.com/gorilla/mux"
 )
@@ -24,8 +25,8 @@ func StartServer(port int) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/scan/start", handler.StartScanHandler)
 	// Need careful path matching for IDs with default mux
-	mux.HandleFunc("/scan/status/", handler.ScanStatusHandler) // Note trailing slash
-	mux.HandleFunc("/scan/result/", handler.ScanResultHandler) // Note trailing slash
+	mux.HandleFunc("/scan/status/", handler.ScanStatusHandler) // Note trailing slash - matches /scan/status/jobid
+	mux.HandleFunc("/scan/result/", handler.ScanResultHandler) // Note trailing slash - matches /scan/result/jobid
 	// mux.HandleFunc("/scan/stream/", handler.ScanStreamHandler) // For future SSE/WS
 
 	/* // --- Using Gorilla Mux (Example) ---
@@ -45,6 +46,7 @@ func StartServer(port int) {
 	}
 
 	// Graceful shutdown setup
+	// Run server in a goroutine so that it doesn't block.
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("[API] ListenAndServe error: %v", err)
@@ -72,4 +74,3 @@ func StartServer(port int) {
 
 	log.Println("[API] Server exiting gracefully.")
 }
- 
