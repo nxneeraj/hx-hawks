@@ -9,6 +9,6 @@ var (
 	ColorWhite   = color.New(color.FgWhite).SprintFunc()
 	ColorBlue    = color.New(color.FgBlue).SprintFunc()
 	ColorMagenta = color.New(color.FgMagenta).SprintFunc() // Pink/Magenta
-    ColorYellow  = color.New(color.FgYellow).SprintFunc()  // For warnings or info
-    ColorCyan    = color.New(color.FgCyan).SprintFunc()    // For details like keywords
-) 
+	ColorYellow  = color.New(color.FgYellow).SprintFunc()  // For warnings or info
+	ColorCyan    = color.New(color.FgCyan).SprintFunc()    // For details like keywords
+)
