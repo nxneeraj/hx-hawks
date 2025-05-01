@@ -55,5 +55,5 @@ func main() {
 	_ = scan.Run(urls) // Results are processed and saved within Run()
 
 	log.Println("[+] Hx-H.A.W.K.S scan complete.")
-}0
+}
  
