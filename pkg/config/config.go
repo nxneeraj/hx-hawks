@@ -2,10 +2,10 @@ package config
 
 import (
 	"flag"
-	"strings"
-	"time"
 	"log"
 	"os"
+	"strings"
+	"time"
 )
 
 // Config holds all the configuration settings for the scanner.
@@ -57,14 +57,13 @@ func ParseFlags() *Config {
 		log.Fatal("[-] Input file path (-f) is required for CLI mode")
 	}
 	if cfg.KeywordsRaw == "" && !cfg.API { // Keywords required for CLI mode (can be passed via API later)
-	    log.Fatal("[-] Custom keywords (--ck) are required")
+		log.Fatal("[-] Custom keywords (--ck) are required")
 	}
-    if cfg.InputFile != "" {
-        if _, err := os.Stat(cfg.InputFile); os.IsNotExist(err) {
-            log.Fatalf("[-] Input file does not exist: %s", cfg.InputFile)
-        }
-    }
-
+	if cfg.InputFile != "" {
+		if _, err := os.Stat(cfg.InputFile); os.IsNotExist(err) {
+			log.Fatalf("[-] Input file does not exist: %s", cfg.InputFile)
+		}
+	}
 
 	if *timeoutSec <= 0 {
 		log.Println("[!] Invalid timeout value, defaulting to 10 seconds")
@@ -104,10 +103,9 @@ func ParseFlags() *Config {
 		}
 		cfg.Keywords = validKeywords
 		if len(cfg.Keywords) == 0 && !cfg.API {
-             log.Fatal("[-] No valid keywords provided via --ck")
-        }
+			log.Fatal("[-] No valid keywords provided via --ck")
+		}
 	}
 
-
 	return cfg
-} 
+}
