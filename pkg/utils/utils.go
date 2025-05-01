@@ -59,4 +59,4 @@ func GetIP(targetURL string) string {
 		}
 	}
 	return ips[0].String() // Fallback to the first IP (likely IPv6)
-} 
+}
