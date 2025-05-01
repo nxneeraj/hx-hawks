@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yourusername/hx-hawks/pkg/httpclient" // Adjust import path
-	"github.com/yourusername/hx-hawks/pkg/types"      // Adjust import path
-	"github.com/yourusername/hx-hawks/pkg/utils"      // Adjust import path
+	"github.com/nxneeraj/hx-hawks/pkg/httpclient" 
+	"github.com/nxneeraj/hx-hawks/pkg/types"      
+	"github.com/nxneeraj/hx-hawks/pkg/utils"      
 )
 
 // Worker function that processes URLs from the urls channel and sends results to the results channel.
@@ -104,4 +104,3 @@ func Worker(ctx context.Context, wg *sync.WaitGroup, id int, client *httpclient.
 		}
 	}
 }
- 
