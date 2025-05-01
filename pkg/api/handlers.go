@@ -9,9 +9,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nxneeraj/hx-hawks/pkg/config"  
-	"github.com/nxneeraj/hx-hawks/pkg/scanner" 
-	"github.com/nxneeraj/hx-hawks/pkg/types"   
+	
+	"github.com/nxneeraj/hx-hawks/pkg/config"
+	"github.com/nxneeraj/hx-hawks/pkg/httpclient"
+	"github.com/nxneeraj/hx-hawks/pkg/scanner"
+	"github.com/nxneeraj/hx-hawks/pkg/types"
+
 	// Use gorilla/mux or stick to net/http's default mux
 	// "github.com/gorilla/mux"
 )
@@ -41,6 +44,7 @@ func (h *APIHandler) StartScanHandler(w http.ResponseWriter, r *http.Request) {
 		TimeoutSec int      `json:"timeout_sec"`
 		Threads    int      `json:"threads"`
 		DelayMs    int      `json:"delay_ms"`
+		Verbose    bool     `json:"verbose"` // Allow setting verbose for API scan
 		// Add other relevant config options if needed (duration, etc.)
 	}
 
@@ -64,10 +68,10 @@ func (h *APIHandler) StartScanHandler(w http.ResponseWriter, r *http.Request) {
 		// InputFile not used in API mode directly like this
 		Keywords:    requestBody.Keywords,
 		KeywordsRaw: strings.Join(requestBody.Keywords, ","), // Store raw for consistency if needed
-		Threads:     10,                                      // Default
-		Timeout:     10 * time.Second,                        // Default
-		Delay:       0 * time.Millisecond,                    // Default
-		Verbose:     false,                                   // API scans likely less verbose by default
+		Threads:     10,                                       // Default
+		Timeout:     10 * time.Second,                         // Default
+		Delay:       0 * time.Millisecond,                     // Default
+		Verbose:     requestBody.Verbose,                      // Use value from request
 		// API specific fields
 		API:     true,
 		APIPort: 0, // Not relevant for the scan job itself
@@ -78,8 +82,10 @@ func (h *APIHandler) StartScanHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if requestBody.TimeoutSec > 0 {
 		apiConfig.Timeout = time.Duration(requestBody.TimeoutSec) * time.Second
-	} else {
-		apiConfig.Timeout = 10 * time.Second // Ensure a default if 0 or negative
+	} else if requestBody.TimeoutSec == 0 {
+        // Allow 0 for very fast checks, but usually default is better
+		apiConfig.Timeout = 10 * time.Second // Ensure a default if 0 or negative provided inappropriately
+        log.Println("[API] Timeout defaulting to 10s for job")
 	}
 	if requestBody.DelayMs >= 0 {
 		apiConfig.Delay = time.Duration(requestBody.DelayMs) * time.Millisecond
@@ -107,29 +113,29 @@ func (h *APIHandler) StartScanHandler(w http.ResponseWriter, r *http.Request) {
 	// --- Start the scan in a background goroutine ---
 	go func(jobID string, cfg *config.Config, urlsToScan []string) {
 		log.Printf("[API Job %s] Starting scan...", jobID)
-		scan := scanner.NewScanner(cfg) // Create scanner with API-specific config
+		// Mark as running immediately
+		err := h.Manager.UpdateJobStatus(jobID, "Running", nil)
+		if err != nil {
+			log.Printf("[API Job %s] Failed to set status to Running: %v", jobID, err)
+			// If we can't even update the status, something is wrong, bail out?
+			return
+		}
 
-		// --- Modify scanner's Run logic slightly for API ---
-		// Instead of printing to terminal directly and writing files,
-		// it should update the JobManager
-		// We need a way to pass results back to the manager.
-
+		// Create HTTP client and necessary channels
+		client := httpclient.NewClient(cfg.Timeout)
 		urlChan := make(chan string, cfg.Threads)
 		resultChan := make(chan types.ScanResult, cfg.Threads)
 		var wg sync.WaitGroup
-		scanCtx, cancel := context.WithCancel(context.Background()) // No duration for now, add later if needed
-		defer cancel()
-
-		_ = h.Manager.UpdateJobStatus(jobID, "Running", nil) // Mark as running
+		scanCtx, cancel := context.WithCancel(context.Background()) // Use cancellable context
+		defer cancel()                                             // Ensure cancellation
 
 		// Start workers
+		wg.Add(cfg.Threads)
 		for i := 0; i < cfg.Threads; i++ {
-			wg.Add(1)
-			// Pass a reference to the manager or a callback to update it
 			go func(workerID int) {
 				defer wg.Done()
-				scanner.Worker(scanCtx, nil, workerID, scan.Client, cfg.Keywords, cfg.Delay, urlChan, resultChan, cfg.Verbose)
-				// Removed wg pass to worker as we handle it here
+				// Use the scanner.Worker directly
+				scanner.Worker(scanCtx, workerID, client, cfg.Keywords, cfg.Delay, urlChan, resultChan, cfg.Verbose)
 			}(i + 1)
 		}
 
@@ -139,32 +145,67 @@ func (h *APIHandler) StartScanHandler(w http.ResponseWriter, r *http.Request) {
 			for _, u := range urlsToScan {
 				select {
 				case urlChan <- u:
-				case <-scanCtx.Done():
+				case <-scanCtx.Done(): // Check context if channel blocks
+                    log.Printf("[API Job %s] Context cancelled during URL feed", jobID)
 					break feedLoop
 				}
 			}
-			close(urlChan)
+			close(urlChan) // Signal workers no more URLs
+            log.Printf("[API Job %s] Finished feeding URLs", jobID)
 		}()
 
 		// Collect results and update manager
+        collectorDone := make(chan struct{}) // Signal channel for collector completion
 		go func() {
-			for result := range resultChan {
-				err := h.Manager.AddResult(jobID, result)
-				if err != nil {
-					log.Printf("[API Job %s] Error adding result: %v", jobID, err)
+            defer close(collectorDone) // Signal completion when this goroutine exits
+        collectLoop:
+			for {
+				select {
+				case result, ok := <-resultChan:
+					if !ok {
+                        log.Printf("[API Job %s] Result channel closed", jobID)
+						break collectLoop // Channel closed, workers are done
+					}
+					err := h.Manager.AddResult(jobID, result)
+					if err != nil {
+						log.Printf("[API Job %s] Error adding result: %v. Stopping collection.", jobID, err)
+                        // If we can't add results, maybe cancel the scan context?
+                        cancel() // Cancel the scan if adding result fails critically
+						break collectLoop
+					}
+                case <-scanCtx.Done():
+                    log.Printf("[API Job %s] Context cancelled during result collection", jobID)
+                    break collectLoop // Exit if context cancelled
 				}
 			}
+            log.Printf("[API Job %s] Finished collecting results", jobID)
 		}()
 
-		wg.Wait()         // Wait for workers
-		close(resultChan) // Close result chan *after* workers finish
+		// Wait for all workers to finish
+        log.Printf("[API Job %s] Waiting for workers...", jobID)
+		wg.Wait()
+        log.Printf("[API Job %s] Workers finished.", jobID)
 
-		// Wait for result collector? No, AddResult is synchronous enough here.
-		// Mark job as completed
-		_ = h.Manager.UpdateJobStatus(jobID, "Completed", nil)
-		log.Printf("[API Job %s] Scan completed.", jobID)
+        // Close result channel *after* workers are done (signals collector)
+        close(resultChan)
 
-		// Note: Error handling during scan needs to update job status to "Error"
+        // Wait for the collector to process all results from the closed channel
+        <-collectorDone // Wait until collector signals it's done
+        log.Printf("[API Job %s] Result collector finished processing.", jobID)
+
+
+		// Mark job as completed (unless already marked as Error by AddResult failure)
+		// Check current status before overwriting
+		currentStatus, _ := h.Manager.GetJobStatus(jobID)
+		if currentStatus != nil && currentStatus.Status != "Error" {
+			_ = h.Manager.UpdateJobStatus(jobID, "Completed", nil)
+			log.Printf("[API Job %s] Scan marked as completed.", jobID)
+		} else if currentStatus != nil {
+            log.Printf("[API Job %s] Scan finished with status: %s", jobID, currentStatus.Status)
+        } else {
+            log.Printf("[API Job %s] Scan finished, but job status was unexpectedly nil.", jobID)
+        }
+
 
 	}(jobID, apiConfig, validURLs) // Pass copies or necessary values
 
@@ -184,12 +225,12 @@ func (h *APIHandler) ScanStatusHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Extract job ID from path - requires a router like gorilla/mux
 	// or manual path parsing for net/http
-	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/scan/status/"), "/")
-	if len(parts) != 1 || parts[0] == "" {
+	pathPrefix := "/scan/status/"
+	jobID := strings.TrimPrefix(r.URL.Path, pathPrefix)
+	if jobID == "" || strings.Contains(jobID, "/") { // Basic check
 		http.Error(w, "Invalid or missing Job ID in URL path", http.StatusBadRequest)
 		return
 	}
-	jobID := parts[0]
 
 	/* // Example using gorilla/mux
 	vars := mux.Vars(r)
@@ -219,12 +260,13 @@ func (h *APIHandler) ScanResultHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract job ID (same as status handler)
-	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/scan/result/"), "/")
-	if len(parts) != 1 || parts[0] == "" {
-		http.Error(w, "Invalid or missing Job ID in URL path", http.StatusBadRequest)
-		return
-	}
-	jobID := parts[0]
+	pathPrefix := "/scan/result/"
+	jobID := strings.TrimPrefix(r.URL.Path, pathPrefix)
+    if jobID == "" || strings.Contains(jobID, "/") { // Basic check
+         http.Error(w, "Invalid or missing Job ID in URL path", http.StatusBadRequest)
+         return
+    }
+
 	/* // Example using gorilla/mux
 	vars := mux.Vars(r)
 	jobID, ok := vars["id"]
@@ -245,24 +287,24 @@ func (h *APIHandler) ScanResultHandler(w http.ResponseWriter, r *http.Request) {
 		// Not finished, maybe return status code 202 Accepted or 400 Bad Request?
 		// Let's return 202 with the current status.
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		json.NewEncoder(w).Encode(status) // Return status info
+		w.WriteHeader(http.StatusAccepted) // Indicate still processing
+		json.NewEncoder(w).Encode(status)  // Return status info
 		return
 	}
 
 	// If completed or errored, fetch the actual results
-	results, err := h.Manager.GetJobResults(jobID) // Now get results
+	results, err := h.Manager.GetJobResults(jobID) // Now get results (returns a copy)
 	if err != nil {
 		// Should not happen if GetJobStatus succeeded, but check anyway
-		http.NotFound(w, r)
+		http.Error(w, "Failed to retrieve results for completed job: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	// Decide what to return: just the results array, or the full JobStatus object including results?
 	// Let's return the full JobStatus object for consistency, but with the Results array populated.
-	jobWithResults, _ := h.Manager.GetJobStatus(jobID) // Get status again (cheap)
-	jobWithResults.Results = results                   // Add results to the copy
+	jobWithResults := status       // Start with the status we already fetched
+	jobWithResults.Results = results // Add the results copy
 
 	json.NewEncoder(w).Encode(jobWithResults)
 }
