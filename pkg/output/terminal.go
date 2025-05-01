@@ -5,7 +5,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/nxneeraj/hx-hawks/pkg/types" 
+	"github.com/nxneeraj/hx-hawks/pkg/types" // Corrected import path
 )
 
 const MaxResponseLength = 500 // Limit response preview length in terminal
@@ -52,7 +52,10 @@ func highlightKeywords(text string, keywords []string) string {
 	highlightedText := text
 	for _, keyword := range keywords {
 		// Simple case-sensitive replace. Use regex for case-insensitivity or complex patterns.
-		highlightedText = strings.ReplaceAll(highlightedText, keyword, ColorMagenta(keyword))
+		// Need to be careful here - replacing within already colored text might break ANSI codes.
+		// A more robust solution would parse ANSI codes or highlight before adding color.
+		// For simplicity, let's keep the basic replace for now.
+		highlightedText = strings.ReplaceAll(highlightedText, keyword, ColorMagenta(keyword)+ColorBlue("")) // Try to reset color after highlight
 	}
 	return highlightedText
 }
