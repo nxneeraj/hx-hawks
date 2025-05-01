@@ -50,9 +50,16 @@ func (m *ScanManager) UpdateJobStatus(jobID, status string, err error) error {
 		return errors.New("job not found")
 	}
 
+	// Don't revert status from Completed or Error
+	if job.Status == "Completed" || job.Status == "Error" {
+		return nil // Or log a warning
+	}
+
+
 	job.Status = status
 	if err != nil {
 		job.Error = err.Error()
+        job.Status = "Error" // Ensure status reflects error
 	}
 	if status == "Completed" || status == "Error" {
 		now := time.Now().UTC()
@@ -77,11 +84,14 @@ func (m *ScanManager) AddResult(jobID string, result types.ScanResult) error {
 		if result.IsVulnerable {
 			job.VulnerableURLs++
 		}
-		// Update status to running if it was pending
-		if job.Status == "Pending" {
+		// Update status to running if it was pending and hasn't hit an error
+		if job.Status == "Pending" && job.Error == "" {
 			job.Status = "Running"
 		}
-	}
+	} else {
+        // Job might be completed or errored out already
+        return errors.New("cannot add result to job in status: " + job.Status)
+    }
 
 	return nil
 }
@@ -106,6 +116,7 @@ func (m *ScanManager) GetJobStatus(jobID string) (*types.JobStatus, error) {
 		StartTime:      job.StartTime,
 		EndTime:        job.EndTime,
 		Error:          job.Error,
+		// Results field intentionally omitted
 	}
 
 	return statusCopy, nil
@@ -122,12 +133,15 @@ func (m *ScanManager) GetJobResults(jobID string) ([]types.ScanResult, error) {
 	}
 
 	// Optionally check if the job is completed before returning results
-	if job.Status != "Completed" && job.Status != "Error" {
-		// Could return an error or just the results so far
-		// return nil, errors.New("job not yet completed")
-	}
+	// if job.Status != "Completed" && job.Status != "Error" {
+	// 	return nil, errors.New("job not yet completed")
+	// }
 
-	return job.Results, nil
+    // Return a copy of the results slice to prevent external modification
+    resultsCopy := make([]types.ScanResult, len(job.Results))
+    copy(resultsCopy, job.Results)
+
+	return resultsCopy, nil
 }
 
 // DeleteJob removes a job (optional cleanup).
@@ -136,4 +150,3 @@ func (m *ScanManager) DeleteJob(jobID string) {
 	defer m.mu.Unlock()
 	delete(m.jobs, jobID)
 }
- 
