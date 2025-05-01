@@ -5,7 +5,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/nxneeraj/hx-hawks/pkg/types" // Corrected import path
+	"github.com/nxneeraj/hx-hawks/pkg/types"
 )
 
 const MaxResponseLength = 500 // Limit response preview length in terminal
