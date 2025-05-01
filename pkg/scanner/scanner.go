@@ -2,15 +2,17 @@ package scanner
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/nxneeraj/hx-hawks/pkg/config"     
-	"github.com/nxneeraj/hx-hawks/pkg/httpclient" 
-	"github.com/nxneeraj/hx-hawks/pkg/output"     
-	"github.com/nxneeraj/hx-hawks/pkg/types"      
+	
+	"github.com/nxneeraj/hx-hawks/pkg/config"
+	"github.com/nxneeraj/hx-hawks/pkg/httpclient"
+	"github.com/nxneeraj/hx-hawks/pkg/output"
+	"github.com/nxneeraj/hx-hawks/pkg/types"
 )
 
 // Scanner orchestrates the scanning process.
@@ -48,7 +50,7 @@ func (s *Scanner) Run(urls []string) []types.ScanResult {
 
 	urlChan := make(chan string, s.Config.Threads)              // Buffered channel
 	resultChan := make(chan types.ScanResult, s.Config.Threads) // Buffered channel for results
-	var wg sync.WaitGroup
+	var wg sync.WaitGroup                                       // WaitGroup to wait for workers
 
 	// Determine overall context (with potential total scan duration)
 	var scanCtx context.Context
@@ -61,12 +63,17 @@ func (s *Scanner) Run(urls []string) []types.ScanResult {
 	defer cancel() // Ensure cancellation propagates
 
 	// Start workers
+	wg.Add(s.Config.Threads) // Add count for all workers before starting them
 	for i := 0; i < s.Config.Threads; i++ {
-		wg.Add(1)
-		go Worker(scanCtx, &wg, i+1, s.Client, s.Config.Keywords, s.Config.Delay, urlChan, resultChan, s.Config.Verbose)
+		go func(workerID int) {
+			defer wg.Done() // Signal WaitGroup when worker goroutine finishes
+			// Pass scanCtx, workerID, client, keywords, delay, channels, verbose
+			Worker(scanCtx, workerID, s.Client, s.Config.Keywords, s.Config.Delay, urlChan, resultChan, s.Config.Verbose)
+		}(i + 1)
 	}
 
-	// Feed URLs to workers
+	// Feed URLs to workers in a separate goroutine
+	// This prevents blocking if urlChan fills up
 	go func() {
 	feedLoop:
 		for _, url := range urls {
@@ -78,43 +85,89 @@ func (s *Scanner) Run(urls []string) []types.ScanResult {
 				break feedLoop // Exit loop if context is cancelled
 			}
 		}
-		close(urlChan) // Close channel once all URLs are sent
+		close(urlChan) // Close channel once all URLs are sent (signals workers no more input)
+		log.Println("[+] Finished feeding URLs to workers.")
 	}()
 
-	// Collect results
+	// Collect results in a separate goroutine
+	// This allows processing while workers are still running
 	var collectorWg sync.WaitGroup
 	collectorWg.Add(1)
 	go func() {
 		defer collectorWg.Done()
 		processedCount := 0
 		totalURLs := len(urls)
-		for result := range resultChan {
-			s.ResultMutex.Lock()
-			s.Results = append(s.Results, result)
-			s.ResultMutex.Unlock()
+		progressTicker := time.NewTicker(5 * time.Second) // Update progress periodically
+		defer progressTicker.Stop()
 
-			output.PrintResultTerminal(result) // Print result to terminal immediately
+	collectLoop:
+		for {
+			select {
+			case result, ok := <-resultChan:
+				if !ok {
+					// resultChan is closed (means all workers are done sending)
+					log.Println("[+] Result channel closed.")
+					break collectLoop // Exit collection loop
+				}
 
-			processedCount++
-			// Optional: Print progress
-			// fmt.Printf("\rProgress: %d/%d (%.2f%%)", processedCount, totalURLs, float64(processedCount)/float64(totalURLs)*100)
+				s.ResultMutex.Lock()
+				s.Results = append(s.Results, result)
+				s.ResultMutex.Unlock()
+
+				output.PrintResultTerminal(result) // Print result to terminal immediately
+				processedCount++
+
+			case <-progressTicker.C:
+				// Optional: Print progress periodically instead of every result
+				s.ResultMutex.Lock()
+				currentProcessed := len(s.Results)
+				s.ResultMutex.Unlock()
+				fmt.Printf("\rProgress: %d/%d (%.2f%%)", currentProcessed, totalURLs, float64(currentProcessed)/float64(totalURLs)*100)
+
+			case <-scanCtx.Done():
+				log.Println("[!] Scan context cancelled during result collection.")
+				break collectLoop // Exit if context cancelled
+			}
 		}
-		// fmt.Println() // Newline after progress indicator
+		fmt.Println() // Newline after final progress update
+		log.Println("[+] Finished collecting results.")
 	}()
 
-	// Wait for all workers to finish
+	// Wait for all worker goroutines to finish (wg.Wait())
+	// This happens *after* feeding URLs and *before* closing resultChan fully
+	log.Println("[+] Waiting for workers to complete...")
 	wg.Wait()
-	close(resultChan) // Close result channel once workers are done
+	log.Println("[+] All workers have completed.")
 
-	// Wait for collector to finish processing all results
+	// Now that workers are done, we can safely close the resultChan
+	// This signals the collector loop that no more results will arrive
+	// Note: Closing resultChan was moved here from where wg.Wait() was previously.
+	// It should be closed AFTER wg.Wait() confirms workers are done sending.
+	// -- Actually, the collector logic handles the close signal. Closing urlChan is key.
+	// -- Let's rethink: close(resultChan) should happen *after* wg.Wait().
+	// This was missing/misplaced logic.
+
+	// Let's structure clearly:
+	// 1. Start workers (wg.Add(N))
+	// 2. Feed URLs (close urlChan when done)
+	// 3. Start Collector goroutine
+	// 4. Wait for workers (wg.Wait())
+	// 5. Workers finishing cause urlChan reads to end. Workers call wg.Done().
+	// 6. *After* wg.Wait(), we know no more writes to resultChan will happen.
+	// 7. Close resultChan to signal collector it can stop reading.
+	close(resultChan) // Signal collector loop to terminate *after* workers finish
+
+	// Wait for the collector goroutine to finish processing everything from resultChan
+	log.Println("[+] Waiting for result collector to finish...")
 	collectorWg.Wait()
+	log.Println("[+] Result collector finished.")
 
 	endTime := time.Now()
 	duration := endTime.Sub(startTime)
 	log.Printf("[+] Scan finished at %s", endTime.Format(time.RFC3339))
 	log.Printf("[+] Total duration: %s", duration)
 
-	s.ResultMutex.Lock()
+	s.ResultMutex.Lock() // Lock for final counts and file writing
 	defer s.ResultMutex.Unlock()
 	numVulnerable := 0
 	for _, r := range s.Results {
