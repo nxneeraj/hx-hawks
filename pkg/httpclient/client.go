@@ -4,9 +4,9 @@ import (
 	"context"
 	"crypto/tls"
 	"io"
+	"log"
 	"net/http"
 	"time"
-    "log"
 )
 
 // CustomClient holds the configured HTTP client.
@@ -18,20 +18,19 @@ type CustomClient struct {
 func NewClient(timeout time.Duration) *CustomClient {
 	// Allow insecure connections (often needed for pentesting)
 	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-        Proxy: http.ProxyFromEnvironment, // Respect environment proxy settings
-        MaxIdleConns:        100,
-		IdleConnTimeout:     90 * time.Second,
-		TLSHandshakeTimeout: 10 * time.Second,
+		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
+		Proxy:                 http.ProxyFromEnvironment, // Respect environment proxy settings
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
-
 	}
 
 	client := &http.Client{
 		Timeout:   timeout,
 		Transport: transport,
-        CheckRedirect: func(req *http.Request, via []*http.Request) error {
-            // Follow redirects by default, but prevent infinite loops
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			// Follow redirects by default, but prevent infinite loops
 			if len(via) >= 10 {
 				return http.ErrUseLastResponse // Or a custom error
 			}
@@ -50,32 +49,31 @@ func (c *CustomClient) Fetch(ctx context.Context, urlStr string) (string, int, [
 
 	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
 	if err != nil {
-        duration := time.Since(startTime).Seconds()
+		duration := time.Since(startTime).Seconds()
 		return urlStr, 0, nil, duration, err
 	}
 
-    // Set a common user-agent
-    req.Header.Set("User-Agent", "Hx-H.A.W.K.S Scanner (github.com/yourusername/hx-hawks)")
-    // Add other headers if needed
+	// Set a common user-agent
+	req.Header.Set("User-Agent", "Hx-H.A.W.K.S Scanner (github.com/nxneeraj/hx-hawks)") // Updated path
+	// Add other headers if needed
 
 	resp, err := c.Client.Do(req)
 	if err != nil {
-        duration := time.Since(startTime).Seconds()
+		duration := time.Since(startTime).Seconds()
 		return urlStr, 0, nil, duration, err
 	}
 	defer resp.Body.Close()
 
-    duration := time.Since(startTime).Seconds()
+	duration := time.Since(startTime).Seconds()
 	finalURL := resp.Request.URL.String() // Get the URL after any redirects
-
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-        // Log error reading body, but might still return status code
+		// Log error reading body, but might still return status code
 		log.Printf("[!] Error reading response body for %s: %v", finalURL, err)
-        // Optionally return a partial result or just the error
+		// Optionally return a partial result or just the error
 		return finalURL, resp.StatusCode, nil, duration, err
 	}
 
 	return finalURL, resp.StatusCode, bodyBytes, duration, nil
-} 
+}
