@@ -3,13 +3,13 @@ package output
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
-	"log"
-
-	"github.com/nxneeraj/hx-hawks/pkg/config" 
-	"github.com/nxneeraj/hx-hawks/pkg/types"  
+	// Corrected import paths
+	"github.com/nxneeraj/hx-hawks/pkg/config"
+	"github.com/nxneeraj/hx-hawks/pkg/types"
 )
 
 // WriteResultsToFile handles writing scan results to various output files based on config.
@@ -85,13 +85,18 @@ func writeOutputPlain(filename string, results []types.ScanResult) error {
 	}
 	defer file.Close()
 
+	count := 0
 	for _, r := range results {
 		if r.IsVulnerable && r.Error == "" {
 			if _, err := fmt.Fprintln(file, r.URL); err != nil {
 				return err // Return on first write error
 			}
+			count++
 		}
 	}
+	if count == 0 {
+        log.Printf("[i] No vulnerable results to write to %s", filename)
+    }
 	return nil
 }
 
@@ -110,14 +115,16 @@ func writeOutputJSON(filename string, results []types.ScanResult) error {
 
 	if len(vulnerableResults) == 0 {
 		log.Printf("[i] No vulnerable results to write to %s", filename)
-		// Create an empty file or empty JSON array file? Let's create an empty array file.
-		return os.WriteFile(filename, []byte("[]"), 0644)
+		// Create an empty JSON array file.
+		return os.WriteFile(filename, []byte("[]\n"), 0644)
 	}
 
 	jsonData, err := json.MarshalIndent(vulnerableResults, "", "  ")
 	if err != nil {
 		return err
 	}
+	// Add trailing newline for POSIX compatibility
+	jsonData = append(jsonData, '\n')
 	return os.WriteFile(filename, jsonData, 0644)
 }
 
@@ -129,6 +136,7 @@ func writeOutputResponse(filename string, results []types.ScanResult) error {
 	}
 	defer file.Close()
 
+    count := 0
 	for _, r := range results {
 		if r.IsVulnerable && r.Error == "" {
 			separator := strings.Repeat("=", 80)
@@ -142,8 +150,12 @@ func writeOutputResponse(filename string, results []types.ScanResult) error {
 			if _, err := fmt.Fprint(file, output); err != nil {
 				return err
 			}
+            count++
 		}
 	}
+    if count == 0 {
+        log.Printf("[i] No vulnerable results with responses to write to %s", filename)
+    }
 	return nil
 }
 
@@ -154,6 +166,11 @@ func writeOutputAll(filename string, results []types.ScanResult) error {
 		return err
 	}
 	defer file.Close()
+
+    if len(results) == 0 {
+        log.Printf("[i] No results to write to %s", filename)
+        return nil
+    }
 
 	for _, r := range results {
 		status := "SAFE"
@@ -178,12 +195,14 @@ func writeOutputAll(filename string, results []types.ScanResult) error {
 func writeOutputAllJSON(filename string, results []types.ScanResult) error {
 	if len(results) == 0 {
 		log.Printf("[i] No results to write to %s", filename)
-		// Create an empty file or empty JSON array file? Let's create an empty array file.
-		return os.WriteFile(filename, []byte("[]"), 0644)
+		// Create an empty JSON array file.
+		return os.WriteFile(filename, []byte("[]\n"), 0644)
 	}
 	jsonData, err := json.MarshalIndent(results, "", "  ")
 	if err != nil {
 		return err
 	}
+    // Add trailing newline
+    jsonData = append(jsonData, '\n')
 	return os.WriteFile(filename, jsonData, 0644)
 }
