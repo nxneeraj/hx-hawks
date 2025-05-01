@@ -6,9 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/yourusername/hx-hawks/pkg/config" // Adjust import path
-	"github.com/yourusername/hx-hawks/pkg/types"  // Adjust import path
-    "log"
+	"log"
+
+	"github.com/nxneeraj/hx-hawks/pkg/config" 
+	"github.com/nxneeraj/hx-hawks/pkg/types"  
 )
 
 // WriteResultsToFile handles writing scan results to various output files based on config.
@@ -18,53 +19,60 @@ func WriteResultsToFile(cfg *config.Config, results []types.ScanResult) error {
 	// -o: Plain text vulnerable URLs
 	if cfg.OutputFile != "" {
 		if err := writeOutputPlain(cfg.OutputFile, results); err != nil {
-            log.Printf("[!] Failed to write plain output to %s: %v", cfg.OutputFile, err)
+			log.Printf("[!] Failed to write plain output to %s: %v", cfg.OutputFile, err)
 			writeErr = err // Keep track of the first error
 		} else {
-            log.Printf("[+] Vulnerable URLs saved to: %s", cfg.OutputFile)
-        }
+			log.Printf("[+] Vulnerable URLs saved to: %s", cfg.OutputFile)
+		}
 	}
 
 	// -o-json: JSON for vulnerable URLs (url, matched_keywords, response)
 	if cfg.OutputJSON != "" {
 		if err := writeOutputJSON(cfg.OutputJSON, results); err != nil {
 			log.Printf("[!] Failed to write JSON output to %s: %v", cfg.OutputJSON, err)
-            if writeErr == nil { writeErr = err }
+			if writeErr == nil {
+				writeErr = err
+			}
 		} else {
-             log.Printf("[+] Vulnerable results (JSON) saved to: %s", cfg.OutputJSON)
-        }
+			log.Printf("[+] Vulnerable results (JSON) saved to: %s", cfg.OutputJSON)
+		}
 	}
 
 	// -o-response: Plain text vulnerable URLs + response
 	if cfg.OutputResponse != "" {
 		if err := writeOutputResponse(cfg.OutputResponse, results); err != nil {
 			log.Printf("[!] Failed to write response output to %s: %v", cfg.OutputResponse, err)
-            if writeErr == nil { writeErr = err }
+			if writeErr == nil {
+				writeErr = err
+			}
 		} else {
-             log.Printf("[+] Vulnerable URLs with responses saved to: %s", cfg.OutputResponse)
-        }
+			log.Printf("[+] Vulnerable URLs with responses saved to: %s", cfg.OutputResponse)
+		}
 	}
 
-    // -o-all: Plain text all URLs (vulnerable + safe)
+	// -o-all: Plain text all URLs (vulnerable + safe)
 	if cfg.OutputAll != "" {
 		if err := writeOutputAll(cfg.OutputAll, results); err != nil {
 			log.Printf("[!] Failed to write all output to %s: %v", cfg.OutputAll, err)
-            if writeErr == nil { writeErr = err }
+			if writeErr == nil {
+				writeErr = err
+			}
 		} else {
-            log.Printf("[+] All scanned URLs saved to: %s", cfg.OutputAll)
-        }
+			log.Printf("[+] All scanned URLs saved to: %s", cfg.OutputAll)
+		}
 	}
 
-    // -o-all-json: Full JSON report for all URLs
+	// -o-all-json: Full JSON report for all URLs
 	if cfg.OutputAllJSON != "" {
 		if err := writeOutputAllJSON(cfg.OutputAllJSON, results); err != nil {
 			log.Printf("[!] Failed to write full JSON output to %s: %v", cfg.OutputAllJSON, err)
-            if writeErr == nil { writeErr = err }
+			if writeErr == nil {
+				writeErr = err
+			}
 		} else {
-            log.Printf("[+] Full JSON report saved to: %s", cfg.OutputAllJSON)
-        }
+			log.Printf("[+] Full JSON report saved to: %s", cfg.OutputAllJSON)
+		}
 	}
-
 
 	return writeErr
 }
@@ -100,11 +108,11 @@ func writeOutputJSON(filename string, results []types.ScanResult) error {
 		}
 	}
 
-    if len(vulnerableResults) == 0 {
-        log.Printf("[i] No vulnerable results to write to %s", filename)
-        // Create an empty file or empty JSON array file? Let's create an empty array file.
-        return os.WriteFile(filename, []byte("[]"), 0644)
-    }
+	if len(vulnerableResults) == 0 {
+		log.Printf("[i] No vulnerable results to write to %s", filename)
+		// Create an empty file or empty JSON array file? Let's create an empty array file.
+		return os.WriteFile(filename, []byte("[]"), 0644)
+	}
 
 	jsonData, err := json.MarshalIndent(vulnerableResults, "", "  ")
 	if err != nil {
@@ -129,7 +137,7 @@ func writeOutputResponse(filename string, results []types.ScanResult) error {
 				r.StatusCode,
 				strings.Join(r.MatchedKeywords, ", "),
 				r.ResponseBody,
-                separator,
+				separator,
 			)
 			if _, err := fmt.Fprint(file, output); err != nil {
 				return err
@@ -148,17 +156,17 @@ func writeOutputAll(filename string, results []types.ScanResult) error {
 	defer file.Close()
 
 	for _, r := range results {
-        status := "SAFE"
-        details := ""
-        if r.Error != "" {
-            status = "ERROR"
-            details = fmt.Sprintf("Error: %s", r.Error)
-        } else if r.IsVulnerable {
-            status = "VULNERABLE"
-            details = fmt.Sprintf("Matched: %s", strings.Join(r.MatchedKeywords, ", "))
-        }
+		status := "SAFE"
+		details := ""
+		if r.Error != "" {
+			status = "ERROR"
+			details = fmt.Sprintf("Error: %s", r.Error)
+		} else if r.IsVulnerable {
+			status = "VULNERABLE"
+			details = fmt.Sprintf("Matched: %s", strings.Join(r.MatchedKeywords, ", "))
+		}
 
-        line := fmt.Sprintf("[%s] %s (Status: %d) %s\n", status, r.URL, r.StatusCode, details)
+		line := fmt.Sprintf("[%s] %s (Status: %d) %s\n", status, r.URL, r.StatusCode, details)
 		if _, err := fmt.Fprint(file, line); err != nil {
 			return err
 		}
@@ -166,17 +174,16 @@ func writeOutputAll(filename string, results []types.ScanResult) error {
 	return nil
 }
 
-
 // writeOutputAllJSON saves a full JSON report of all results.
 func writeOutputAllJSON(filename string, results []types.ScanResult) error {
-    if len(results) == 0 {
-        log.Printf("[i] No results to write to %s", filename)
-        // Create an empty file or empty JSON array file? Let's create an empty array file.
-         return os.WriteFile(filename, []byte("[]"), 0644)
-    }
+	if len(results) == 0 {
+		log.Printf("[i] No results to write to %s", filename)
+		// Create an empty file or empty JSON array file? Let's create an empty array file.
+		return os.WriteFile(filename, []byte("[]"), 0644)
+	}
 	jsonData, err := json.MarshalIndent(results, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(filename, jsonData, 0644)
-} 
+}
