@@ -34,7 +34,7 @@
 ## Go-Lang Installer (Self-Install)
 
 ```bash
-go install github.com/hxbunny/hx-hawks@latest
+go install github.com/nxneeraj/hx-hawks@latest
 ```
 
 ### Manual
