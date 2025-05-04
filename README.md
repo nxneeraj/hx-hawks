@@ -210,7 +210,7 @@ PRs, feedback, and stars 🌟 are always welcome!
 ## 📜 License
 
 MIT License – Use it, fork it, break it, fix it 🔓  
-See [LICENSE](./LICENSE)
+See [LICENSE](./License.md)
 
 ---
 
